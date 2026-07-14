@@ -20,8 +20,6 @@ SQL_SEDES = """
         s.sede_id             AS id_sede_ops,
         s.nombre,
         s.direccion,
-        s.telefono,
-        s.nombre_contacto,
         s.cliente_id,
         s.ciudad_id
     FROM public.sede s;
@@ -46,14 +44,14 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
 
     dim = dim[[
         "id_sede", "id_sede_ops", "nombre", "direccion",
-        "telefono", "nombre_contacto", "cliente_id", "ciudad_id",
+         "cliente_id", "ciudad_id",
     ]].copy()
 
     dim = dim.fillna({"telefono": "N/A", "nombre_contacto": "N/A"})
 
     desconocido = pd.DataFrame([{
         "id_sede": 0, "id_sede_ops": 0, "nombre": "Desconocida",
-        "direccion": "N/A", "telefono": "N/A", "nombre_contacto": "N/A",
+        "direccion": "N/A",
         "cliente_id": 0, "ciudad_id": 0,
     }])
     dim = pd.concat([desconocido, dim], ignore_index=True)
@@ -72,8 +70,6 @@ CREATE TABLE dim_sede (
     id_sede_ops INTEGER,
     nombre VARCHAR(200),
     direccion VARCHAR(300),
-    telefono VARCHAR(50),
-    nombre_contacto VARCHAR(150),
     cliente_id INTEGER,
     ciudad_id INTEGER
 );
