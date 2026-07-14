@@ -25,7 +25,6 @@ SQL_MENSAJEROS = """
         m.user_id,
         u.first_name          AS nombre,
         u.last_name           AS apellido,
-        m.telefono,
         m.activo,
         m.fecha_entrada,
         m.fecha_salida,
@@ -53,11 +52,11 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
 
     dim = dim[[
         "id_mensajero", "id_mensajero_ops", "nombre", "apellido",
-        "telefono", "activo", "fecha_entrada", "fecha_salida",
+        "activo", "fecha_entrada", "fecha_salida",
         "ciudad_operacion_id",
     ]].copy()
 
-    dim = dim.fillna({"apellido": "N/A", "telefono": "N/A", "fecha_salida": None})
+    dim = dim.fillna({"apellido": "N/A", "fecha_salida": None})
 
     # Estado derivado
     dim["estado"] = dim.apply(
@@ -67,7 +66,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
     desconocido = pd.DataFrame([{
         "id_mensajero": 0, "id_mensajero_ops": 0,
         "nombre": "Desconocido", "apellido": "N/A",
-        "telefono": "N/A", "activo": False,
+        "activo": False,
         "fecha_entrada": None, "fecha_salida": None,
         "ciudad_operacion_id": 0, "estado": "Desconocido",
     }])
@@ -87,7 +86,6 @@ CREATE TABLE dim_mensajero (
     id_mensajero_ops INTEGER,
     nombre VARCHAR(100),
     apellido VARCHAR(100),
-    telefono VARCHAR(30),
     activo BOOLEAN,
     fecha_entrada DATE,
     fecha_salida DATE,
