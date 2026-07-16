@@ -1,10 +1,13 @@
 """
-fact_servicios.py - VERSIÓN CORREGIDA
-Fix 1: Chunksize reducido (100 filas) para no exceder límite de parámetros
-Fix 2: Parsing correcto de hora_solicitud (era objeto time, no datetime)
+fact_servicios.py - VERSIÓN FINAL DEFINITIVA
+Fix 1: Chunksize reducido (500 filas) sin method='multi' para evitar error 9h9h.
+Fix 2: Parsing robusto de hora_solicitud (maneja objetos time de PostgreSQL).
+Fix 3: NUMERIC(15,2) para evitar desbordamiento en cálculos de tiempo.
+Fix 4: Manejo correcto de 'descripcion_cancelado' y estado "Cancelado".
 """
 import sys
 import os
+# Agregar la carpeta padre al path para poder importar utils desde cualquier lugar
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pandas as pd
@@ -110,30 +113,21 @@ def _construir_mapeos_sk(motor_bodega: Engine) -> dict:
 
 
 def _extraer_hora(valor) -> int:
-    """
-    Función robusta para extraer la hora de un valor que puede ser:
-    - time object (de PostgreSQL)
-    - timedelta (pandas a veces lo convierte así)
-    - string 'HH:MM:SS'
-    - datetime
-    - None/NaT
-    """
+    """Función robusta para extraer la hora de un valor time, timedelta, string o datetime."""
     if pd.isna(valor) or valor is None:
         return 0
     if isinstance(valor, dt_time):
         return valor.hour
-    if hasattr(valor, 'hour'):  # datetime o timedelta con .hour
+    if hasattr(valor, 'hour'):
         return int(valor.hour)
     if isinstance(valor, str):
         try:
-            # '08:30:00' o '8:30 AM'
             return int(valor.split(':')[0])
         except (ValueError, IndexError):
             return 0
-    # timedelta: convertir segundos totales a horas
     if hasattr(valor, 'total_seconds'):
         total_seg = valor.total_seconds()
-        if total_seg < 86400:  # menos de 1 día
+        if total_seg < 86400:
             return int(total_seg // 3600) % 24
     return 0
 
@@ -198,7 +192,6 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         minutos_entre("ts_iniciado", "ts_cerrado"), np.nan)
 
     # --- RETRASO VS DESEADO ---
-    # IMPORTANTE: construir timestamp correctamente
     fact["timestamp_deseado"] = pd.to_datetime(
         fact["fecha_deseada"].astype(str) + " " +
         fact["hora_deseada"].apply(lambda h: h.strftime("%H:%M:%S") if isinstance(h, dt_time) else str(h) if pd.notna(h) else "00:00:00"),
@@ -225,8 +218,11 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         fact["id_novedad_ops"] = np.nan
         fact["tiene_novedad"] = False
 
-    # --- ESTADO FINAL ---
+    # --- ESTADO FINAL (CON SOPORTE PARA CANCELADOS) ---
     def estado_final(row):
+        desc_cancelado = row.get("descripcion_cancelado")
+        if pd.notna(desc_cancelado) and str(desc_cancelado).strip() and str(desc_cancelado).strip().lower() != "nan":
+            return "Cancelado"
         if pd.notna(row.get("ts_cerrado")):
             return "Completado"
         for col in ["ts_entregado", "ts_recogido", "ts_asignado", "ts_iniciado"]:
@@ -237,12 +233,10 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
     fact["estado_final"] = fact.apply(estado_final, axis=1)
     fact["servicio_completado_exitosamente"] = fact["estado_final"] == "Completado"
 
-    # --- 🔧 FIX: EXTRAER HORAS CORRECTAMENTE ---
+    # --- EXTRAER HORAS CORRECTAMENTE ---
     logger.info("  -> Extrayendo horas con función robusta...")
     fact["hora_solicitud"] = fact["hora_solicitud"].apply(_extraer_hora)
     fact["hora_deseada"] = fact["hora_deseada"].apply(_extraer_hora)
-    
-    # Validación: mostrar distribución de horas para confirmar
     logger.info(f"  -> Distribución hora_solicitud (primeras 5): {sorted(fact['hora_solicitud'].unique())[:5]}")
 
     # --- SURROGATE KEYS ---
@@ -331,7 +325,7 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
 
 
 # ============================================================
-# 3. LOAD - 🔧 CON CHUNKSIZE CORREGIDO
+# 3. LOAD
 # ============================================================
 DDL_FACT_SERVICIOS = """
 DROP TABLE IF EXISTS fact_servicios CASCADE;
@@ -367,12 +361,14 @@ CREATE TABLE fact_servicios (
 );
 """
 
+
 def cargar(df: pd.DataFrame, motor: Engine = None):
     """
-    Carga FACT_SERVICIOS SIN method='multi' para evitar el error 9h9h.
-    Usa inserciones individuales que son más lentas pero no fallan.
+    Carga FACT_SERVICIOS de forma segura.
+    - Sin method='multi' para evitar el error 9h9h de SQLAlchemy/PostgreSQL.
+    - chunksize=500 para mantener el número de parámetros muy por debajo del límite de 32,000.
     """
-    logger.info("Cargando FACT_SERVICIOS (modo seguro, sin method='multi')...")
+    logger.info("Cargando FACT_SERVICIOS (modo seguro, chunksize=500, sin method='multi')...")
     motor = motor or MOTOR_BODEGA
 
     # 1. Crear tabla
@@ -380,18 +376,31 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         conn.execute(text(DDL_FACT_SERVICIOS))
     logger.info("  ✅ Tabla creada")
 
-    # 2. Cargar SIN method='multi' (usa INSERT individuales)
-    df.to_sql(
-        "fact_servicios",
-        motor,
-        if_exists="append",
-        index=False,
-        schema="public",
-        # ⚠️ NO usar method='multi' - causa error 9h9h
-        chunksize=1000,  # Procesa de 1000 en 1000 pero con INSERT individuales
-    )
+    # 2. Cargar en lotes seguros
+    total = len(df)
+    chunksize = 500
     
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    for i in range(0, total, chunksize):
+        chunk = df.iloc[i:i + chunksize]
+        try:
+            chunk.to_sql(
+                "fact_servicios",
+                motor,
+                if_exists="append",
+                index=False,
+                schema="public",
+                chunksize=chunksize,  # Sin method='multi'
+            )
+            cargadas = i + len(chunk)
+            progreso = (cargadas / total) * 100
+            logger.info(f"  ✅ Lote cargado: {cargadas}/{total} ({progreso:.1f}%)")
+        except Exception as e:
+            logger.error(f"  ❌ Error en lote {i}-{i+len(chunk)}: {e}")
+            raise
+    
+    logger.info(f"  -> {total} filas cargadas en total ✅")
+
+
 # ============================================================
 # ORQUESTADOR
 # ============================================================

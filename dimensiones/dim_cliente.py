@@ -20,8 +20,6 @@ SQL_CLIENTES = """
         c.cliente_id          AS id_cliente_ops,
         c.nit_cliente,
         c.nombre,
-        c.email,
-        c.telefono,
         c.nombre_contacto,
         c.sector,
         c.activo,
@@ -50,18 +48,17 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
 
     dim = dim[[
         "id_cliente", "id_cliente_ops", "nombre", "nit_cliente",
-        "email", "telefono", "nombre_contacto", "sector",
+        "nombre_contacto", "sector",
         "tipo_cliente", "activo",
     ]].copy()
 
     dim = dim.fillna({
-        "email": "N/A", "telefono": "N/A",
         "nombre_contacto": "N/A", "sector": "N/A",
     })
 
     desconocido = pd.DataFrame([{
         "id_cliente": 0, "id_cliente_ops": 0, "nombre": "Desconocido",
-        "nit_cliente": "N/A", "email": "N/A", "telefono": "N/A",
+        "nit_cliente": "N/A", 
         "nombre_contacto": "N/A", "sector": "N/A",
         "tipo_cliente": "N/A", "activo": True,
     }])
@@ -81,8 +78,6 @@ CREATE TABLE dim_cliente (
     id_cliente_ops INTEGER,
     nombre VARCHAR(200),
     nit_cliente VARCHAR(50),
-    email VARCHAR(150),
-    telefono VARCHAR(50),
     nombre_contacto VARCHAR(150),
     sector VARCHAR(100),
     tipo_cliente VARCHAR(100),
