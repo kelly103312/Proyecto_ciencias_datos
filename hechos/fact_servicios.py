@@ -40,7 +40,8 @@ SQL_SERVICIOS = """
         s.tipo_servicio_id,
         s.tipo_vehiculo_id,
         s.prioridad,
-        s.es_prueba
+        s.es_prueba,
+        s.descripcion_cancelado
     FROM public.mensajeria_servicio s
     WHERE s.es_prueba = FALSE;
 """
