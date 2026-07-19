@@ -57,7 +57,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
         "ciudad_operacion_id",
     ]].copy()
 
-    dim = dim.fillna({"apellido": "N/A", "telefono": "N/A", "fecha_salida": None})
+    dim = dim.fillna({"apellido": "N/A", "telefono": "N/A"})
 
     # Estado derivado
     dim["estado"] = dim.apply(
@@ -108,7 +108,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         "dim_mensajero", motor, if_exists="append",
         index=False, schema="public", method="multi", chunksize=1000,
     )
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    logger.info(f"  -> {len(df)} filas cargadas")
 
 
 # ============================================================
@@ -123,7 +123,7 @@ def ejecutar_dim_mensajero():
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_MENSAJERO COMPLETADO ✅")
+    logger.info("PIPELINE DIM_MENSAJERO COMPLETADO")
     return df_transformado
 
 

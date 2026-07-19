@@ -13,8 +13,9 @@ from . import (
     dim_sede,
     dim_mensajero,
     dim_tipo_entrega,
+    dim_categoria_servicio,  # NUEVA (A1)
     dim_novedad,
-    dim_tipo_vehiculo,  # NUEVA
+    dim_tipo_vehiculo,
 )
 
 __all__ = [
@@ -24,6 +25,7 @@ __all__ = [
     "dim_sede",
     "dim_mensajero",
     "dim_tipo_entrega",
+    "dim_categoria_servicio",
     "dim_novedad",
     "dim_tipo_vehiculo",
 ]
