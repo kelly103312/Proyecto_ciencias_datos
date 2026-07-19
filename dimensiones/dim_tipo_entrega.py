@@ -1,13 +1,24 @@
 """
 dim_tipo_entrega.py
 ===================
-Dimensión TIPO ENTREGA: clasifica los servicios según SLA.
+Dimensión TIPO ENTREGA: clasifica los servicios según el SLA de entrega
+(Alta/Media/Baja) prometido al cliente.
+
+Se construye desde la columna `prioridad` de mensajeria_servicio, que es texto
+libre sin catálogo (ej. "Alta: En una Hora", "Media: De 1 - 3 Horas"). Se
+normaliza con utils.normalizar_prioridad() para colapsar variantes de
+redacción ("Alta: En una Hora" / "Alta: En una hora") al mismo valor.
+
+Antes, esta dimensión se construía por error desde `mensajeria_tiposervicio`
+(categoría de negocio, no SLA) — ver Modificaciones/Seccion A1.md. Esa
+categoría ahora vive en DIM_CATEGORIA_SERVICIO.
+
 Contiene: EXTRACT, TRANSFORM y LOAD.
 """
 import pandas as pd
 from sqlalchemy.engine import Engine
 from sqlalchemy import text
-from utils import MOTOR_ORIGEN, MOTOR_BODEGA, get_logger
+from utils import MOTOR_ORIGEN, MOTOR_BODEGA, get_logger, normalizar_prioridad
 
 logger = get_logger(__name__)
 
@@ -15,20 +26,18 @@ logger = get_logger(__name__)
 # ============================================================
 # 1. EXTRACT
 # ============================================================
-SQL_TIPOS_SERVICIO = """
-    SELECT
-        id                    AS id_tipo_entrega_ops,
-        nombre,
-        descripcion
-    FROM public.mensajeria_tiposervicio;
+SQL_PRIORIDADES = """
+    SELECT DISTINCT prioridad
+    FROM public.mensajeria_servicio
+    WHERE es_prueba = FALSE AND prioridad IS NOT NULL;
 """
 
 
 def extraer(motor: Engine = None) -> pd.DataFrame:
     logger.info("Extrayendo DIM_TIPO_ENTREGA...")
     motor = motor or MOTOR_ORIGEN
-    df = pd.read_sql(SQL_TIPOS_SERVICIO, motor)
-    logger.info(f"  -> {len(df)} filas extraídas")
+    df = pd.read_sql(SQL_PRIORIDADES, motor)
+    logger.info(f"  -> {len(df)} valores distintos de prioridad extraídos")
     return df
 
 
@@ -38,20 +47,20 @@ def extraer(motor: Engine = None) -> pd.DataFrame:
 def transformar(df: pd.DataFrame) -> pd.DataFrame:
     logger.info("Transformando DIM_TIPO_ENTREGA...")
     dim = df.copy()
-    dim["id_tipo_entrega"] = range(1, len(dim) + 1)
+    dim["sla"] = dim["prioridad"].apply(normalizar_prioridad)
 
-    dim = dim[[
-        "id_tipo_entrega", "id_tipo_entrega_ops", "nombre", "descripcion",
-    ]].copy()
-    dim = dim.rename(columns={"nombre": "tipo_entrega"})
+    # Colapsar variantes de redacción ("Alta: En una Hora" / "Alta: En una hora")
+    # al mismo valor canónico antes de asignar la llave subrogada.
+    dim = dim.drop_duplicates(subset=["sla"])[["sla"]].reset_index(drop=True)
+    dim["id_tipo_entrega"] = range(1, len(dim) + 1)
+    dim = dim[["id_tipo_entrega", "sla"]].copy()
 
     desconocido = pd.DataFrame([{
-        "id_tipo_entrega": 0, "id_tipo_entrega_ops": 0,
-        "tipo_entrega": "Desconocido", "descripcion": "N/A",
+        "id_tipo_entrega": 0, "sla": "Desconocido",
     }])
     dim = pd.concat([desconocido, dim], ignore_index=True)
 
-    logger.info(f"  -> {len(dim)} filas transformadas")
+    logger.info(f"  -> {len(dim)} filas transformadas: {dim['sla'].tolist()}")
     return dim
 
 
@@ -62,9 +71,7 @@ DDL_DIM_TIPO_ENTREGA = """
 DROP TABLE IF EXISTS dim_tipo_entrega CASCADE;
 CREATE TABLE dim_tipo_entrega (
     id_tipo_entrega INTEGER PRIMARY KEY,
-    id_tipo_entrega_ops INTEGER,
-    tipo_entrega VARCHAR(100),
-    descripcion VARCHAR(500)
+    sla VARCHAR(50)
 );
 """
 

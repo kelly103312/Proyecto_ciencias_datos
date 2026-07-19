@@ -37,6 +37,20 @@ def get_logger(nombre: str, nivel: int = logging.INFO) -> logging.Logger:
     return logger
 
 
+def normalizar_prioridad(valor) -> str:
+    """
+    Normaliza el texto libre de `mensajeria_servicio.prioridad` a un valor canónico
+    (Alta/Media/Baja), colapsando variantes de redacción como
+    "Alta: En una Hora" / "Alta: En una hora" al mismo valor "Alta".
+    Se usa tanto en dim_tipo_entrega.py como en fact_servicios.py para que el
+    mapeo entre ambos coincida siempre.
+    """
+    if valor is None or valor != valor:  # valor != valor detecta NaN sin depender de pandas
+        return "Desconocido"
+    etiqueta = str(valor).split(":")[0].strip()
+    return etiqueta if etiqueta else "Desconocido"
+
+
 def crear_motor(db_config: dict) -> Engine:
     """
     Crea un motor SQLAlchemy a partir de un diccionario de configuración.
