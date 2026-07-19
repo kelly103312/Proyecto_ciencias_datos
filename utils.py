@@ -64,6 +64,7 @@ def crear_motor(db_config: dict) -> Engine:
     url = (
         f"postgresql+psycopg2://{db_config['user']}:{db_config['password']}"
         f"@{db_config['host']}:{db_config['port']}/{db_config['database']}"
+        f"?client_encoding=utf8"
     )
     return create_engine(url)
 

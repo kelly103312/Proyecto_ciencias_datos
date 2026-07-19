@@ -57,7 +57,7 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
         "ciudad_operacion_id",
     ]].copy()
 
-    dim = dim.fillna({"apellido": "N/A", "telefono": "N/A", "fecha_salida": None})
+    dim = dim.fillna({"apellido": "N/A", "telefono": "N/A"})
 
     # Estado derivado
     dim["estado"] = dim.apply(
