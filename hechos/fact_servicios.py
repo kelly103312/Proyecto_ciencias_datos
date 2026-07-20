@@ -184,9 +184,20 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         b = pd.to_datetime(fact[col_b], errors="coerce")
         return (b - a).dt.total_seconds().div(60).round(2)
 
+    # "Iniciado" casi nunca queda registrado como evento en mensajeria_estadosservicio
+    # (solo 3 de 28.328 servicios reales), así que ts_iniciado no sirve como inicio real
+    # del servicio. fecha_solicitud/hora_solicitud sí están siempre pobladas en
+    # mensajeria_servicio y representan el mismo instante ("Iniciado" es el estado por
+    # defecto al solicitar), así que se usan como fuente confiable de ese punto de partida.
+    fact["timestamp_solicitud"] = pd.to_datetime(
+        fact["fecha_solicitud"].astype(str) + " " +
+        fact["hora_solicitud"].apply(lambda h: h.strftime("%H:%M:%S") if isinstance(h, dt_time) else str(h) if pd.notna(h) else "00:00:00"),
+        errors="coerce"
+    )
+
     fact["min_iniciado_a_asignado"] = np.where(
-        fact["ts_iniciado"].notna() & fact["ts_asignado"].notna(),
-        minutos_entre("ts_iniciado", "ts_asignado"), np.nan)
+        fact["timestamp_solicitud"].notna() & fact["ts_asignado"].notna(),
+        minutos_entre("timestamp_solicitud", "ts_asignado"), np.nan)
     fact["min_asignado_a_recogido"] = np.where(
         fact["ts_asignado"].notna() & fact["ts_recogido"].notna(),
         minutos_entre("ts_asignado", "ts_recogido"), np.nan)
@@ -197,8 +208,8 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         fact["ts_entregado"].notna() & fact["ts_cerrado"].notna(),
         minutos_entre("ts_entregado", "ts_cerrado"), np.nan)
     fact["min_total_servicio"] = np.where(
-        fact["ts_iniciado"].notna() & fact["ts_cerrado"].notna(),
-        minutos_entre("ts_iniciado", "ts_cerrado"), np.nan)
+        fact["timestamp_solicitud"].notna() & fact["ts_cerrado"].notna(),
+        minutos_entre("timestamp_solicitud", "ts_cerrado"), np.nan)
 
     # --- RETRASO VS DESEADO ---
     fact["timestamp_deseado"] = pd.to_datetime(
@@ -275,12 +286,19 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
     # El detalle completo (todas las novedades) ahora vive en FACT_NOVEDADES.
 
     # --- MAPEO DE SEDES ---
+    # mapeo_sedes: cliente+ciudad -> sede_id CRUDO de la BD operacional (única forma
+    # de cruzar, no hay FK directa entre servicio y sede - ver DIM_SEDE.md). Ese
+    # sede_id crudo NO es la llave subrogada de dim_sede (que es secuencial e
+    # independiente, ver dim_sede.py) - hay que traducirlo con mapeos["sede"]
+    # (id_sede_ops -> id_sede) antes de guardarlo en el hecho.
     sedes["key"] = sedes["cliente_id"].astype(str) + "_" + sedes["ciudad_id"].astype(str)
     mapeo_sedes = dict(zip(sedes["key"], sedes["sede_id"]))
     fact["key_origen"] = fact["cliente_id"].astype(str) + "_" + fact["ciudad_origen_id"].astype(str)
     fact["key_destino"] = fact["cliente_id"].astype(str) + "_" + fact["ciudad_destino_id"].astype(str)
-    fact["id_sede_origen"] = fact["key_origen"].map(lambda k: mapeo_sedes.get(k, 0))
-    fact["id_sede_destino"] = fact["key_destino"].map(lambda k: mapeo_sedes.get(k, 0))
+    fact["id_sede_origen"] = (fact["key_origen"].map(mapeo_sedes)
+        .apply(lambda x: mapear(x, mapeos["sede"])))
+    fact["id_sede_destino"] = (fact["key_destino"].map(mapeo_sedes)
+        .apply(lambda x: mapear(x, mapeos["sede"])))
 
     # --- LIMPIEZA DE STRINGS ---
     fact["prioridad"] = fact["prioridad"].fillna("N/A").astype(str).str[:50]
