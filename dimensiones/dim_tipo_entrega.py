@@ -1,18 +1,7 @@
 """
 dim_tipo_entrega.py
 ===================
-Dimensión TIPO ENTREGA: clasifica los servicios según el SLA de entrega
-(Alta/Media/Baja) prometido al cliente.
-
-Se construye desde la columna `prioridad` de mensajeria_servicio, que es texto
-libre sin catálogo (ej. "Alta: En una Hora", "Media: De 1 - 3 Horas"). Se
-normaliza con utils.normalizar_prioridad() para colapsar variantes de
-redacción ("Alta: En una Hora" / "Alta: En una hora") al mismo valor.
-
-Antes, esta dimensión se construía por error desde `mensajeria_tiposervicio`
-(categoría de negocio, no SLA) — ver Modificaciones/Seccion A1.md. Esa
-categoría ahora vive en DIM_CATEGORIA_SERVICIO.
-
+Dimensión TIPO ENTREGA: clasifica los servicios según el SLA(Alta/Media/Baja) prometido al cliente.
 Contiene: EXTRACT, TRANSFORM y LOAD.
 """
 import pandas as pd
@@ -49,8 +38,6 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
     dim = df.copy()
     dim["sla"] = dim["prioridad"].apply(normalizar_prioridad)
 
-    # Colapsar variantes de redacción ("Alta: En una Hora" / "Alta: En una hora")
-    # al mismo valor canónico antes de asignar la llave subrogada.
     dim = dim.drop_duplicates(subset=["sla"])[["sla"]].reset_index(drop=True)
     dim["id_tipo_entrega"] = range(1, len(dim) + 1)
     dim = dim[["id_tipo_entrega", "sla"]].copy()
@@ -87,7 +74,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         "dim_tipo_entrega", motor, if_exists="append",
         index=False, schema="public", method="multi", chunksize=1000,
     )
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    logger.info(f"  -> {len(df)} filas cargadas")
 
 
 # ============================================================
@@ -102,7 +89,7 @@ def ejecutar_dim_tipo_entrega():
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_TIPO_ENTREGA COMPLETADO ✅")
+    logger.info("PIPELINE DIM_TIPO_ENTREGA COMPLETADO")
     return df_transformado
 
 

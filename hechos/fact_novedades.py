@@ -4,15 +4,6 @@ fact_novedades.py
 Tabla de hechos NOVEDADES: registra cada novedad ocurrida durante la prestación
 de un servicio. Grano: 1 fila = 1 novedad ocurrida (no 1 por servicio).
 
-Nace de una limitación de FACT_SERVICIOS: por su grano (1 fila por servicio),
-solo puede capturar la primera novedad de cada servicio, descartando las demás.
-Ver Modificaciones/Seccion A2.md para la justificación completa.
-
-`id_servicio` es una columna degenerada: coincide exactamente con
-FACT_SERVICIOS.id_hecho (ambos son mensajeria_servicio.id, sin renumerar), así
-que no requiere mapeo ni depende de que FACT_SERVICIOS ya esté cargado — solo
-necesita que dim_tiempo, dim_novedad y dim_mensajero existan.
-
 Contiene: EXTRACT, TRANSFORM y LOAD.
 """
 import sys

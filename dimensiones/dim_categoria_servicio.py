@@ -4,11 +4,6 @@ dim_categoria_servicio.py
 Dimensión CATEGORÍA DE SERVICIO: clasifica los servicios por su naturaleza de negocio
 (Administrativo, Comercial, Clínico, Urgencia Vital).
 
-Nace de separar dos conceptos que estaban mezclados bajo DIM_TIPO_ENTREGA:
-esta dimensión captura la CATEGORÍA del servicio (antes en DIM_TIPO_ENTREGA,
-mapeada por error), mientras que DIM_TIPO_ENTREGA ahora captura el SLA real
-(columna `prioridad`). Ver Modificaciones/Seccion A1.md.
-
 Contiene: EXTRACT, TRANSFORM y LOAD.
 """
 import pandas as pd

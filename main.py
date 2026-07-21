@@ -6,10 +6,10 @@ Ejecuta las dimensiones en orden y luego la tabla de hechos.
 """
 from dimensiones import (
     dim_tiempo, dim_cliente, dim_ciudad, dim_sede,
-    dim_mensajero, dim_tipo_entrega, dim_categoria_servicio,  # NUEVA (A1)
+    dim_mensajero, dim_tipo_entrega, dim_categoria_servicio,
     dim_novedad, dim_tipo_vehiculo,
 )
-from hechos import fact_servicios, fact_novedades  # NUEVA (A2)
+from hechos import fact_servicios, fact_novedades
 from utils import get_logger, MOTOR_ORIGEN
 import pandas as pd
 
@@ -19,15 +19,10 @@ logger = get_logger("ETL_MAIN")
 def obtener_rango_fechas() -> tuple:
     """
     Determina el rango de fechas a generar en DIM_TIEMPO.
-    Considera fecha_solicitud y las fechas del historial de estados (incluye la fecha
-    de cierre real), para que ninguna fecha usada en FACT_SERVICIOS quede fuera del
-    rango generado.
 
     NOTA: fecha_deseada se excluye a propósito. Tiene valores corruptos en la BD
     operacional (ej. años 0004 y 9024) que distorsionarían el rango y harían que
-    DIM_TIEMPO intente generar millones de filas. Los servicios con fecha_deseada
-    corrupta simplemente no encontrarán match en dim_tiempo y su id_tiempo_deseado
-    quedará en 0 ("Desconocido"), que es el comportamiento correcto para datos basura.
+    DIM_TIEMPO. Los servicios con fecha_deseada corrupta quedará en 0 ("Desconocido").
     """
     sql = """
         SELECT MIN(f) AS min_fecha, MAX(f) AS max_fecha

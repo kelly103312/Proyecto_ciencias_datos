@@ -1,13 +1,8 @@
 """
-fact_servicios.py - VERSIÓN FINAL DEFINITIVA
-Fix 1: Chunksize reducido (500 filas) sin method='multi' para evitar error 9h9h.
-Fix 2: Parsing robusto de hora_solicitud (maneja objetos time de PostgreSQL).
-Fix 3: NUMERIC(15,2) para evitar desbordamiento en cálculos de tiempo.
-Fix 4: Manejo correcto de 'descripcion_cancelado' y estado "Cancelado".
+fact_servicios.py
 """
 import sys
 import os
-# Agregar la carpeta padre al path para poder importar utils desde cualquier lugar
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 import pandas as pd
@@ -112,8 +107,6 @@ def _construir_mapeos_sk(motor_bodega: Engine) -> dict:
         "tipo_entrega": leer_texto("dim_tipo_entrega", "sla", "id_tipo_entrega"),
         "categoria_servicio": leer("dim_categoria_servicio", "id_categoria_servicio_ops", "id_categoria_servicio"),
         "tipo_vehiculo": leer("dim_tipo_vehiculo", "id_tipo_vehiculo_ops", "id_tipo_vehiculo"),
-        # "novedad" ya no se mapea aquí: id_novedad se retiró de FACT_SERVICIOS (A2),
-        # el detalle completo de novedades ahora vive en FACT_NOVEDADES.
     }
     df_t = pd.read_sql("SELECT fecha_completa, id_tiempo FROM dim_tiempo WHERE id_tiempo > 0", motor_bodega)
     mapeos["tiempo"] = dict(zip(df_t["fecha_completa"], df_t["id_tiempo"]))
@@ -174,7 +167,7 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         if col not in pivot.columns:
             pivot[col] = pd.NaT
 
-    # --- MERGE (SIN SUFIJOS EXTRAÑOS) ---
+    # --- MERGE---
     pivot_clean = pivot.rename(columns={"servicio_id": "id_servicio"})
     fact = servicios.merge(pivot_clean, on="id_servicio", how="left")
 
@@ -238,7 +231,7 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         fact["id_novedad_ops"] = np.nan
         fact["tiene_novedad"] = False
 
-    # --- ESTADO FINAL (CON SOPORTE PARA CANCELADOS) ---
+    # --- ESTADO FINAL ---
     def estado_final(row):
         desc_cancelado = row.get("descripcion_cancelado")
         if pd.notna(desc_cancelado) and str(desc_cancelado).strip() and str(desc_cancelado).strip().lower() != "nan":
@@ -282,15 +275,10 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         .map(lambda sla: mapeos["tipo_entrega"].get(sla, 0)))
     fact["id_categoria_servicio"] = fact["tipo_servicio_id"].apply(lambda x: mapear(x, mapeos["categoria_servicio"]))
     fact["id_tipo_vehiculo"] = fact["tipo_vehiculo_id"].apply(lambda x: mapear(x, mapeos["tipo_vehiculo"]))
-    # id_novedad se retiró (A2): solo mostraba la primera novedad del servicio.
-    # El detalle completo (todas las novedades) ahora vive en FACT_NOVEDADES.
 
     # --- MAPEO DE SEDES ---
     # mapeo_sedes: cliente+ciudad -> sede_id CRUDO de la BD operacional (única forma
-    # de cruzar, no hay FK directa entre servicio y sede - ver DIM_SEDE.md). Ese
-    # sede_id crudo NO es la llave subrogada de dim_sede (que es secuencial e
-    # independiente, ver dim_sede.py) - hay que traducirlo con mapeos["sede"]
-    # (id_sede_ops -> id_sede) antes de guardarlo en el hecho.
+    # de cruzar, no hay FK directa entre servicio y sede). 
     sedes["key"] = sedes["cliente_id"].astype(str) + "_" + sedes["ciudad_id"].astype(str)
     mapeo_sedes = dict(zip(sedes["key"], sedes["sede_id"]))
     fact["key_origen"] = fact["cliente_id"].astype(str) + "_" + fact["ciudad_origen_id"].astype(str)
@@ -395,10 +383,8 @@ CREATE TABLE fact_servicios (
 def cargar(df: pd.DataFrame, motor: Engine = None):
     """
     Carga FACT_SERVICIOS de forma segura.
-    - Sin method='multi' para evitar el error 9h9h de SQLAlchemy/PostgreSQL.
-    - chunksize=500 para mantener el número de parámetros muy por debajo del límite de 32,000.
     """
-    logger.info("Cargando FACT_SERVICIOS (modo seguro, chunksize=500, sin method='multi')...")
+    logger.info("Cargando FACT_SERVICIOS...")
     motor = motor or MOTOR_BODEGA
 
     # 1. Crear tabla
@@ -419,13 +405,13 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
                 if_exists="append",
                 index=False,
                 schema="public",
-                chunksize=chunksize,  # Sin method='multi'
+                chunksize=chunksize,
             )
             cargadas = i + len(chunk)
             progreso = (cargadas / total) * 100
             logger.info(f"Lote cargado: {cargadas}/{total} ({progreso:.1f}%)")
         except Exception as e:
-            logger.error(f"  ❌ Error en lote {i}-{i+len(chunk)}: {e}")
+            logger.error(f" Error en lote {i}-{i+len(chunk)}: {e}")
             raise
     
     logger.info(f"  -> {total} filas cargadas en total")
