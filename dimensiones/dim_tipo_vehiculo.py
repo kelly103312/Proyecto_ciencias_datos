@@ -1,8 +1,7 @@
 """
 dim_tipo_vehiculo.py
 ====================
-Dimensión TIPO VEHÍCULO: clasifica los vehículos usados en los servicios.
-Permite análisis de eficiencia por tipo de vehículo (moto, bicicleta, auto).
+Dimensión TIPO VEHÍCULO: clasifica los vehículos usados en los servicios (moto, bicicleta, auto).
 
 Contiene: EXTRACT, TRANSFORM y LOAD.
 """
@@ -39,26 +38,19 @@ def extraer(motor: Engine = None) -> pd.DataFrame:
 # 2. TRANSFORM
 # ============================================================
 def transformar(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Transforma los datos crudos en la estructura de DIM_TIPO_VEHICULO.
-    Asigna surrogate key y agrega fila "desconocido".
-    """
     logger.info("Transformando DIM_TIPO_VEHICULO...")
     dim = df.copy()
 
     # Asignar surrogate key
     dim["id_tipo_vehiculo"] = range(1, len(dim) + 1)
 
-    # Selección de columnas finales
     dim = dim[[
         "id_tipo_vehiculo", "id_tipo_vehiculo_ops", "nombre", "descripcion",
     ]].copy()
     dim = dim.rename(columns={"nombre": "tipo_vehiculo"})
 
-    # Manejo de nulos
     dim = dim.fillna({"descripcion": "N/A"})
 
-    # Fila "desconocido" (SK = 0)
     desconocido = pd.DataFrame([{
         "id_tipo_vehiculo": 0,
         "id_tipo_vehiculo_ops": 0,
@@ -104,7 +96,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         method="multi",
         chunksize=1000,
     )
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    logger.info(f"  -> {len(df)} filas cargadas")
 
 
 # ============================================================
@@ -120,7 +112,7 @@ def ejecutar_dim_tipo_vehiculo():
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_TIPO_VEHICULO COMPLETADO ✅")
+    logger.info("PIPELINE DIM_TIPO_VEHICULO COMPLETADO")
     return df_transformado
 
 

@@ -3,15 +3,6 @@ dim_sede.py
 ===========
 Dimensión SEDE: ubicaciones físicas de los clientes.
 Contiene: EXTRACT, TRANSFORM y LOAD.
-
-NOTA IMPORTANTE:
-- cliente_id y ciudad_id se cargan TEMPORALMENTE en el DataFrame
-  porque el FACT_SERVICIOS los necesita para hacer el matching de sedes
-  (el hecho los usa antes de cargar la dimensión).
-- En la bodega final SOLO se persisten los atributos descriptivos
-  (id_sede, id_sede_ops, nombre, direccion, ciudad_id) siguiendo a Kimball.
-- La relación cliente-sede queda implícita en el hecho mediante
-  las FKs id_cliente + id_sede_origen/destino.
 """
 import pandas as pd
 from sqlalchemy.engine import Engine
@@ -97,7 +88,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         "dim_sede", motor, if_exists="append",
         index=False, schema="public", method="multi", chunksize=1000,
     )
-    logger.info(f"  -> {len(df_bodega)} filas cargadas ✅")
+    logger.info(f"  -> {len(df_bodega)} filas cargadas")
 
 
 # ============================================================
@@ -112,7 +103,7 @@ def ejecutar_dim_sede():
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_SEDE COMPLETADO ✅")
+    logger.info("PIPELINE DIM_SEDE COMPLETADO")
     return df_transformado
 
 

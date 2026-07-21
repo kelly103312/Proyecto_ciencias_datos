@@ -1,8 +1,8 @@
 """
 dim_tiempo.py
 =============
-Dimensión TIEMPO: no se extrae de la BD operacional, se GENERA por rango de fechas.
-Contiene: EXTRACT (generación), TRANSFORM (enriquecimiento) y LOAD (carga en bodega).
+Dimensión TIEMPO: se GENERA por rango de fechas.
+Contiene: EXTRACT, TRANSFORM y LOAD.
 """
 import pandas as pd
 from sqlalchemy.engine import Engine
@@ -18,8 +18,8 @@ logger = get_logger(__name__)
 # ============================================================
 def extraer(fecha_min: str, fecha_max: str) -> pd.DataFrame:
     """
-    Genera un rango de fechas desde fecha_min hasta fecha_max.
-    No se extrae de la BD operacional, se construye programáticamente.
+    Genera un rango de fechas desde fecha_min hasta fecha_max
+    
     """
     logger.info(f"Generando rango de fechas: {fecha_min} a {fecha_max}")
     fechas = pd.date_range(start=fecha_min, end=fecha_max, freq="D")
@@ -119,7 +119,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         "dim_tiempo", motor, if_exists="append",
         index=False, schema="public", method="multi", chunksize=1000,
     )
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    logger.info(f"  -> {len(df)} filas cargadas")
 
 
 # ============================================================
@@ -135,7 +135,7 @@ def ejecutar_dim_tiempo(fecha_min: str, fecha_max: str):
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_TIEMPO COMPLETADO ✅")
+    logger.info("PIPELINE DIM_TIEMPO COMPLETADO")
     return df_transformado
 
 

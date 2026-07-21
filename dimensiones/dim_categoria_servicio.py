@@ -1,7 +1,9 @@
 """
-dim_cliente.py
-==============
-Dimensión CLIENTE: empresas que contratan los servicios de mensajería.
+dim_categoria_servicio.py
+==========================
+Dimensión CATEGORÍA DE SERVICIO: clasifica los servicios por su naturaleza de negocio
+(Administrativo, Comercial, Clínico, Urgencia Vital).
+
 Contiene: EXTRACT, TRANSFORM y LOAD.
 """
 import pandas as pd
@@ -15,25 +17,19 @@ logger = get_logger(__name__)
 # ============================================================
 # 1. EXTRACT
 # ============================================================
-SQL_CLIENTES = """
+SQL_CATEGORIAS_SERVICIO = """
     SELECT
-        c.cliente_id          AS id_cliente_ops,
-        c.nit_cliente,
-        c.nombre,
-        c.nombre_contacto,
-        c.sector,
-        c.activo,
-        c.tipo_cliente_id,
-        tc.nombre             AS tipo_cliente
-    FROM public.cliente c
-    LEFT JOIN public.tipo_cliente tc ON tc.tipo_cliente_id = c.tipo_cliente_id;
+        id                    AS id_categoria_servicio_ops,
+        nombre                AS categoria_servicio,
+        descripcion
+    FROM public.mensajeria_tiposervicio;
 """
 
 
 def extraer(motor: Engine = None) -> pd.DataFrame:
-    logger.info("Extrayendo DIM_CLIENTE...")
+    logger.info("Extrayendo DIM_CATEGORIA_SERVICIO...")
     motor = motor or MOTOR_ORIGEN
-    df = pd.read_sql(SQL_CLIENTES, motor)
+    df = pd.read_sql(SQL_CATEGORIAS_SERVICIO, motor)
     logger.info(f"  -> {len(df)} filas extraídas")
     return df
 
@@ -42,25 +38,18 @@ def extraer(motor: Engine = None) -> pd.DataFrame:
 # 2. TRANSFORM
 # ============================================================
 def transformar(df: pd.DataFrame) -> pd.DataFrame:
-    logger.info("Transformando DIM_CLIENTE...")
+    logger.info("Transformando DIM_CATEGORIA_SERVICIO...")
     dim = df.copy()
-    dim["id_cliente"] = range(1, len(dim) + 1)
+    dim["id_categoria_servicio"] = range(1, len(dim) + 1)
 
     dim = dim[[
-        "id_cliente", "id_cliente_ops", "nombre", "nit_cliente",
-        "nombre_contacto", "sector",
-        "tipo_cliente", "activo",
+        "id_categoria_servicio", "id_categoria_servicio_ops",
+        "categoria_servicio", "descripcion",
     ]].copy()
 
-    dim = dim.fillna({
-        "nombre_contacto": "N/A", "sector": "N/A",
-    })
-
     desconocido = pd.DataFrame([{
-        "id_cliente": 0, "id_cliente_ops": 0, "nombre": "Desconocido",
-        "nit_cliente": "N/A", 
-        "nombre_contacto": "N/A", "sector": "N/A",
-        "tipo_cliente": "N/A", "activo": True,
+        "id_categoria_servicio": 0, "id_categoria_servicio_ops": 0,
+        "categoria_servicio": "Desconocido", "descripcion": "N/A",
     }])
     dim = pd.concat([desconocido, dim], ignore_index=True)
 
@@ -71,30 +60,26 @@ def transformar(df: pd.DataFrame) -> pd.DataFrame:
 # ============================================================
 # 3. LOAD
 # ============================================================
-DDL_DIM_CLIENTE = """
-DROP TABLE IF EXISTS dim_cliente CASCADE;
-CREATE TABLE dim_cliente (
-    id_cliente INTEGER PRIMARY KEY,
-    id_cliente_ops INTEGER,
-    nombre VARCHAR(200),
-    nit_cliente VARCHAR(50),
-    nombre_contacto VARCHAR(150),
-    sector VARCHAR(100),
-    tipo_cliente VARCHAR(100),
-    activo BOOLEAN
+DDL_DIM_CATEGORIA_SERVICIO = """
+DROP TABLE IF EXISTS dim_categoria_servicio CASCADE;
+CREATE TABLE dim_categoria_servicio (
+    id_categoria_servicio INTEGER PRIMARY KEY,
+    id_categoria_servicio_ops INTEGER,
+    categoria_servicio VARCHAR(100),
+    descripcion VARCHAR(500)
 );
 """
 
 
 def cargar(df: pd.DataFrame, motor: Engine = None):
-    logger.info("Cargando DIM_CLIENTE...")
+    logger.info("Cargando DIM_CATEGORIA_SERVICIO...")
     motor = motor or MOTOR_BODEGA
 
     with motor.begin() as conn:
-        conn.execute(text(DDL_DIM_CLIENTE))
+        conn.execute(text(DDL_DIM_CATEGORIA_SERVICIO))
 
     df.to_sql(
-        "dim_cliente", motor, if_exists="append",
+        "dim_categoria_servicio", motor, if_exists="append",
         index=False, schema="public", method="multi", chunksize=1000,
     )
     logger.info(f"  -> {len(df)} filas cargadas")
@@ -103,18 +88,18 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
 # ============================================================
 # ORQUESTADOR
 # ============================================================
-def ejecutar_dim_cliente():
+def ejecutar_dim_categoria_servicio():
     logger.info("=" * 60)
-    logger.info("INICIANDO PIPELINE: DIM_CLIENTE")
+    logger.info("INICIANDO PIPELINE: DIM_CATEGORIA_SERVICIO")
     logger.info("=" * 60)
 
     df_crudo = extraer()
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_CLIENTE COMPLETADO")
+    logger.info("PIPELINE DIM_CATEGORIA_SERVICIO COMPLETADO")
     return df_transformado
 
 
 if __name__ == "__main__":
-    ejecutar_dim_cliente()
+    ejecutar_dim_categoria_servicio()
