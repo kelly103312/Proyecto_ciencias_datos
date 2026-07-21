@@ -43,3 +43,6 @@ Thumbs.db
 # Archivos temporales
 *.tmp
 *.swp
+
+# Power BI - archivo individual de Jean ya fusionado en modulo_visual.pbix
+visualizacion/preguntas-1-al-5.pbix
