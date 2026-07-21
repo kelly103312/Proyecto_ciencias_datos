@@ -15,7 +15,7 @@ import numpy as np
 from sqlalchemy.engine import Engine
 from sqlalchemy import text
 from datetime import time as dt_time
-from utils import MOTOR_ORIGEN, MOTOR_BODEGA, get_logger
+from utils import MOTOR_ORIGEN, MOTOR_BODEGA, get_logger, normalizar_prioridad
 
 logger = get_logger(__name__)
 
@@ -40,7 +40,8 @@ SQL_SERVICIOS = """
         s.tipo_servicio_id,
         s.tipo_vehiculo_id,
         s.prioridad,
-        s.es_prueba
+        s.es_prueba,
+        s.descripcion_cancelado
     FROM public.mensajeria_servicio s
     WHERE s.es_prueba = FALSE;
 """
@@ -97,14 +98,22 @@ def _construir_mapeos_sk(motor_bodega: Engine) -> dict:
         df = pd.read_sql(f"SELECT {col_ops}, {col_sk} FROM {tabla}", motor_bodega)
         return dict(zip(df[col_ops].astype(int), df[col_sk].astype(int)))
 
+    def leer_texto(tabla, col_texto, col_sk):
+        """Igual que leer(), pero para dimensiones cuya llave de mapeo es texto
+        (ej. dim_tipo_entrega ahora se mapea por 'sla', no por un id operacional)."""
+        df = pd.read_sql(f"SELECT {col_texto}, {col_sk} FROM {tabla}", motor_bodega)
+        return dict(zip(df[col_texto].astype(str), df[col_sk].astype(int)))
+
     mapeos = {
         "cliente": leer("dim_cliente", "id_cliente_ops", "id_cliente"),
         "sede": leer("dim_sede", "id_sede_ops", "id_sede"),
         "mensajero": leer("dim_mensajero", "id_mensajero_ops", "id_mensajero"),
         "ciudad": leer("dim_ciudad", "id_ciudad_ops", "id_ciudad"),
-        "tipo_entrega": leer("dim_tipo_entrega", "id_tipo_entrega_ops", "id_tipo_entrega"),
+        "tipo_entrega": leer_texto("dim_tipo_entrega", "sla", "id_tipo_entrega"),
+        "categoria_servicio": leer("dim_categoria_servicio", "id_categoria_servicio_ops", "id_categoria_servicio"),
         "tipo_vehiculo": leer("dim_tipo_vehiculo", "id_tipo_vehiculo_ops", "id_tipo_vehiculo"),
-        "novedad": leer("dim_novedad", "id_novedad_ops", "id_novedad"),
+        # "novedad" ya no se mapea aquí: id_novedad se retiró de FACT_SERVICIOS (A2),
+        # el detalle completo de novedades ahora vive en FACT_NOVEDADES.
     }
     df_t = pd.read_sql("SELECT fecha_completa, id_tiempo FROM dim_tiempo WHERE id_tiempo > 0", motor_bodega)
     mapeos["tiempo"] = dict(zip(df_t["fecha_completa"], df_t["id_tiempo"]))
@@ -175,9 +184,20 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         b = pd.to_datetime(fact[col_b], errors="coerce")
         return (b - a).dt.total_seconds().div(60).round(2)
 
+    # "Iniciado" casi nunca queda registrado como evento en mensajeria_estadosservicio
+    # (solo 3 de 28.328 servicios reales), así que ts_iniciado no sirve como inicio real
+    # del servicio. fecha_solicitud/hora_solicitud sí están siempre pobladas en
+    # mensajeria_servicio y representan el mismo instante ("Iniciado" es el estado por
+    # defecto al solicitar), así que se usan como fuente confiable de ese punto de partida.
+    fact["timestamp_solicitud"] = pd.to_datetime(
+        fact["fecha_solicitud"].astype(str) + " " +
+        fact["hora_solicitud"].apply(lambda h: h.strftime("%H:%M:%S") if isinstance(h, dt_time) else str(h) if pd.notna(h) else "00:00:00"),
+        errors="coerce"
+    )
+
     fact["min_iniciado_a_asignado"] = np.where(
-        fact["ts_iniciado"].notna() & fact["ts_asignado"].notna(),
-        minutos_entre("ts_iniciado", "ts_asignado"), np.nan)
+        fact["timestamp_solicitud"].notna() & fact["ts_asignado"].notna(),
+        minutos_entre("timestamp_solicitud", "ts_asignado"), np.nan)
     fact["min_asignado_a_recogido"] = np.where(
         fact["ts_asignado"].notna() & fact["ts_recogido"].notna(),
         minutos_entre("ts_asignado", "ts_recogido"), np.nan)
@@ -188,8 +208,8 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         fact["ts_entregado"].notna() & fact["ts_cerrado"].notna(),
         minutos_entre("ts_entregado", "ts_cerrado"), np.nan)
     fact["min_total_servicio"] = np.where(
-        fact["ts_iniciado"].notna() & fact["ts_cerrado"].notna(),
-        minutos_entre("ts_iniciado", "ts_cerrado"), np.nan)
+        fact["timestamp_solicitud"].notna() & fact["ts_cerrado"].notna(),
+        minutos_entre("timestamp_solicitud", "ts_cerrado"), np.nan)
 
     # --- RETRASO VS DESEADO ---
     fact["timestamp_deseado"] = pd.to_datetime(
@@ -258,17 +278,27 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
     fact["id_mensajero"] = fact["mensajero_id"].apply(lambda x: mapear(x, mapeos["mensajero"]))
     fact["id_ciudad_origen"] = fact["ciudad_origen_id"].apply(lambda x: mapear(x, mapeos["ciudad"]))
     fact["id_ciudad_destino"] = fact["ciudad_destino_id"].apply(lambda x: mapear(x, mapeos["ciudad"]))
-    fact["id_tipo_entrega"] = fact["tipo_servicio_id"].apply(lambda x: mapear(x, mapeos["tipo_entrega"]))
+    fact["id_tipo_entrega"] = (fact["prioridad"].apply(normalizar_prioridad)
+        .map(lambda sla: mapeos["tipo_entrega"].get(sla, 0)))
+    fact["id_categoria_servicio"] = fact["tipo_servicio_id"].apply(lambda x: mapear(x, mapeos["categoria_servicio"]))
     fact["id_tipo_vehiculo"] = fact["tipo_vehiculo_id"].apply(lambda x: mapear(x, mapeos["tipo_vehiculo"]))
-    fact["id_novedad"] = fact["id_novedad_ops"].apply(lambda x: mapear(x, mapeos["novedad"]))
+    # id_novedad se retiró (A2): solo mostraba la primera novedad del servicio.
+    # El detalle completo (todas las novedades) ahora vive en FACT_NOVEDADES.
 
     # --- MAPEO DE SEDES ---
+    # mapeo_sedes: cliente+ciudad -> sede_id CRUDO de la BD operacional (única forma
+    # de cruzar, no hay FK directa entre servicio y sede - ver DIM_SEDE.md). Ese
+    # sede_id crudo NO es la llave subrogada de dim_sede (que es secuencial e
+    # independiente, ver dim_sede.py) - hay que traducirlo con mapeos["sede"]
+    # (id_sede_ops -> id_sede) antes de guardarlo en el hecho.
     sedes["key"] = sedes["cliente_id"].astype(str) + "_" + sedes["ciudad_id"].astype(str)
     mapeo_sedes = dict(zip(sedes["key"], sedes["sede_id"]))
     fact["key_origen"] = fact["cliente_id"].astype(str) + "_" + fact["ciudad_origen_id"].astype(str)
     fact["key_destino"] = fact["cliente_id"].astype(str) + "_" + fact["ciudad_destino_id"].astype(str)
-    fact["id_sede_origen"] = fact["key_origen"].map(lambda k: mapeo_sedes.get(k, 0))
-    fact["id_sede_destino"] = fact["key_destino"].map(lambda k: mapeo_sedes.get(k, 0))
+    fact["id_sede_origen"] = (fact["key_origen"].map(mapeo_sedes)
+        .apply(lambda x: mapear(x, mapeos["sede"])))
+    fact["id_sede_destino"] = (fact["key_destino"].map(mapeo_sedes)
+        .apply(lambda x: mapear(x, mapeos["sede"])))
 
     # --- LIMPIEZA DE STRINGS ---
     fact["prioridad"] = fact["prioridad"].fillna("N/A").astype(str).str[:50]
@@ -284,7 +314,7 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
         "id_tiempo_solicitud", "id_tiempo_cierre", "id_tiempo_deseado",
         "id_cliente", "id_sede_origen", "id_sede_destino", "id_mensajero",
         "id_ciudad_origen", "id_ciudad_destino",
-        "id_tipo_entrega", "id_tipo_vehiculo", "id_novedad",
+        "id_tipo_entrega", "id_categoria_servicio", "id_tipo_vehiculo",
         "hora_solicitud", "hora_deseada",
         "prioridad", "descripcion_servicio", "estado_final",
         "min_iniciado_a_asignado", "min_asignado_a_recogido",
@@ -305,7 +335,7 @@ def transformar(datos: dict, mapeos: dict) -> pd.DataFrame:
     int_cols = ["sk_hecho", "id_hecho", "id_tiempo_solicitud", "id_tiempo_cierre",
                 "id_tiempo_deseado", "id_cliente", "id_sede_origen", "id_sede_destino",
                 "id_mensajero", "id_ciudad_origen", "id_ciudad_destino",
-                "id_tipo_entrega", "id_tipo_vehiculo", "id_novedad",
+                "id_tipo_entrega", "id_categoria_servicio", "id_tipo_vehiculo",
                 "hora_solicitud", "hora_deseada"]
     for col in int_cols:
         fact_final[col] = pd.to_numeric(fact_final[col], errors="coerce").fillna(0).astype(int)
@@ -342,8 +372,8 @@ CREATE TABLE fact_servicios (
     id_ciudad_origen INTEGER,
     id_ciudad_destino INTEGER,
     id_tipo_entrega INTEGER,
+    id_categoria_servicio INTEGER,
     id_tipo_vehiculo INTEGER,
-    id_novedad INTEGER,
     hora_solicitud INTEGER,
     hora_deseada INTEGER,
     prioridad VARCHAR(50),
@@ -374,7 +404,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
     # 1. Crear tabla
     with motor.begin() as conn:
         conn.execute(text(DDL_FACT_SERVICIOS))
-    logger.info("  ✅ Tabla creada")
+    logger.info("Tabla creada")
 
     # 2. Cargar en lotes seguros
     total = len(df)
@@ -393,12 +423,12 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
             )
             cargadas = i + len(chunk)
             progreso = (cargadas / total) * 100
-            logger.info(f"  ✅ Lote cargado: {cargadas}/{total} ({progreso:.1f}%)")
+            logger.info(f"Lote cargado: {cargadas}/{total} ({progreso:.1f}%)")
         except Exception as e:
             logger.error(f"  ❌ Error en lote {i}-{i+len(chunk)}: {e}")
             raise
     
-    logger.info(f"  -> {total} filas cargadas en total ✅")
+    logger.info(f"  -> {total} filas cargadas en total")
 
 
 # ============================================================
@@ -414,7 +444,7 @@ def ejecutar_fact_servicios():
     fact = transformar(datos, mapeos)
     cargar(fact)
 
-    logger.info("PIPELINE FACT_SERVICIOS COMPLETADO ✅")
+    logger.info("PIPELINE FACT_SERVICIOS COMPLETADO")
     return fact
 
 

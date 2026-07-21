@@ -6,10 +6,10 @@ Ejecuta las dimensiones en orden y luego la tabla de hechos.
 """
 from dimensiones import (
     dim_tiempo, dim_cliente, dim_ciudad, dim_sede,
-    dim_mensajero, dim_tipo_entrega, dim_novedad,
-    dim_tipo_vehiculo,  # NUEVA DIMENSIÓN
+    dim_mensajero, dim_tipo_entrega, dim_categoria_servicio,  # NUEVA (A1)
+    dim_novedad, dim_tipo_vehiculo,
 )
-from hechos import fact_servicios
+from hechos import fact_servicios, fact_novedades  # NUEVA (A2)
 from utils import get_logger, MOTOR_ORIGEN
 import pandas as pd
 
@@ -17,11 +17,25 @@ logger = get_logger("ETL_MAIN")
 
 
 def obtener_rango_fechas() -> tuple:
-    """Determina el rango de fechas desde los servicios en la BD operacional."""
+    """
+    Determina el rango de fechas a generar en DIM_TIEMPO.
+    Considera fecha_solicitud y las fechas del historial de estados (incluye la fecha
+    de cierre real), para que ninguna fecha usada en FACT_SERVICIOS quede fuera del
+    rango generado.
+
+    NOTA: fecha_deseada se excluye a propósito. Tiene valores corruptos en la BD
+    operacional (ej. años 0004 y 9024) que distorsionarían el rango y harían que
+    DIM_TIEMPO intente generar millones de filas. Los servicios con fecha_deseada
+    corrupta simplemente no encontrarán match en dim_tiempo y su id_tiempo_deseado
+    quedará en 0 ("Desconocido"), que es el comportamiento correcto para datos basura.
+    """
     sql = """
-        SELECT MIN(fecha_solicitud) AS min_fecha, MAX(fecha_solicitud) AS max_fecha
-        FROM public.mensajeria_servicio
-        WHERE es_prueba = FALSE;
+        SELECT MIN(f) AS min_fecha, MAX(f) AS max_fecha
+        FROM (
+            SELECT fecha_solicitud AS f FROM public.mensajeria_servicio WHERE es_prueba = FALSE
+            UNION ALL
+            SELECT fecha AS f FROM public.mensajeria_estadosservicio WHERE es_prueba = FALSE
+        ) fechas;
     """
     df = pd.read_sql(sql, MOTOR_ORIGEN)
     min_f = df["min_fecha"].iloc[0]
@@ -32,7 +46,7 @@ def obtener_rango_fechas() -> tuple:
 def ejecutar_etl_completo():
     """Ejecuta el pipeline ETL completo en el orden correcto."""
     try:
-        logger.info("🚀 INICIO DEL PIPELINE ETL - Fast and Safe")
+        logger.info("INICIO DEL PIPELINE ETL - Fast and Safe")
         logger.info("=" * 60)
 
         # 1. Determinar rango de fechas
@@ -40,7 +54,7 @@ def ejecutar_etl_completo():
         logger.info(f"Rango de fechas detectado: {fecha_min} a {fecha_max}")
 
         # 2. Cargar dimensiones (en orden de independencia)
-        logger.info("\n📊 CARGANDO DIMENSIONES")
+        logger.info("\nCARGANDO DIMENSIONES")
         logger.info("-" * 60)
 
         dim_tiempo.ejecutar_dim_tiempo(fecha_min, fecha_max)
@@ -49,21 +63,23 @@ def ejecutar_etl_completo():
         dim_sede.ejecutar_dim_sede()
         dim_mensajero.ejecutar_dim_mensajero()
         dim_tipo_entrega.ejecutar_dim_tipo_entrega()
+        dim_categoria_servicio.ejecutar_dim_categoria_servicio()  # NUEVA (A1)
         dim_novedad.ejecutar_dim_novedad()
-        dim_tipo_vehiculo.ejecutar_dim_tipo_vehiculo()  # NUEVA
+        dim_tipo_vehiculo.ejecutar_dim_tipo_vehiculo()
 
         # 3. Cargar hechos (al final, depende de todas las dimensiones)
-        logger.info("\n📈 CARGANDO HECHOS")
+        logger.info("\nCARGANDO HECHOS")
         logger.info("-" * 60)
 
         fact_servicios.ejecutar_fact_servicios()
+        fact_novedades.ejecutar_fact_novedades()  # NUEVA (A2) — no depende de fact_servicios
 
         logger.info("=" * 60)
-        logger.info("🎉 PIPELINE ETL FINALIZADO CON ÉXITO")
+        logger.info("PIPELINE ETL FINALIZADO CON ÉXITO")
         logger.info("=" * 60)
 
     except Exception as e:
-        logger.error(f"❌ FALLÓ EL PIPELINE ETL: {e}")
+        logger.error(f"FALLÓ EL PIPELINE ETL: {e}")
         raise
 
 

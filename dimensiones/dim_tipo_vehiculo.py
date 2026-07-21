@@ -104,7 +104,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         method="multi",
         chunksize=1000,
     )
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    logger.info(f"  -> {len(df)} filas cargadas")
 
 
 # ============================================================
@@ -120,7 +120,7 @@ def ejecutar_dim_tipo_vehiculo():
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_TIPO_VEHICULO COMPLETADO ✅")
+    logger.info("PIPELINE DIM_TIPO_VEHICULO COMPLETADO")
     return df_transformado
 
 

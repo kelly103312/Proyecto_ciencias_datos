@@ -97,7 +97,7 @@ def cargar(df: pd.DataFrame, motor: Engine = None):
         "dim_cliente", motor, if_exists="append",
         index=False, schema="public", method="multi", chunksize=1000,
     )
-    logger.info(f"  -> {len(df)} filas cargadas ✅")
+    logger.info(f"  -> {len(df)} filas cargadas")
 
 
 # ============================================================
@@ -112,7 +112,7 @@ def ejecutar_dim_cliente():
     df_transformado = transformar(df_crudo)
     cargar(df_transformado)
 
-    logger.info("PIPELINE DIM_CLIENTE COMPLETADO ✅")
+    logger.info("PIPELINE DIM_CLIENTE COMPLETADO")
     return df_transformado
 
 

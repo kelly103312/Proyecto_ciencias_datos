@@ -16,23 +16,23 @@ def diagnosticar():
     logger.info("=" * 60)
 
     # 1. Extraer datos
-    logger.info("\n📥 PASO 1: Extrayendo datos...")
+    logger.info("\nExtrayendo datos...")
     datos = extraer()
 
     # 2. Construir mapeos
-    logger.info("\n🔗 PASO 2: Construyendo mapeos de SK...")
+    logger.info("\nConstruyendo mapeos de SK...")
     mapeos = _construir_mapeos_sk(MOTOR_BODEGA)
 
     # 3. Transformar
-    logger.info("\n🔄 PASO 3: Transformando datos...")
+    logger.info("\nTransformando datos...")
     try:
         fact = transformar(datos, mapeos)
     except Exception as e:
-        logger.error(f"❌ Error durante transformación: {e}")
+        logger.error(f"Error durante transformación: {e}")
         return
 
     # 4. Mostrar información del DataFrame
-    logger.info("\n📊 RESULTADO DEL DATAFRAME")
+    logger.info("\nRESULTADO DEL DATAFRAME")
     logger.info("-" * 60)
     logger.info(f"Filas: {len(fact)}")
     logger.info(f"Columnas ({len(fact.columns)}):")
@@ -40,27 +40,27 @@ def diagnosticar():
         logger.info(f"  {i:2}. {col}")
 
     # 5. Detectar columnas problemáticas
-    logger.info("\n🔍 DETECTANDO COLUMNAS SOSPECHOSAS")
+    logger.info("\nDETECTANDO COLUMNAS SOSPECHOSAS")
     logger.info("-" * 60)
     columnas_sospechosas = [c for c in fact.columns if "_m999" in c or "_x" in c or "_y" in c]
     if columnas_sospechosas:
-        logger.warning(f"⚠️  Columnas con sufijos extraños: {columnas_sospechosas}")
+        logger.warning(f"Columnas con sufijos extraños: {columnas_sospechosas}")
     else:
-        logger.info("✅ No se encontraron sufijos extraños")
+        logger.info("No se encontraron sufijos extraños")
 
     # 6. Mostrar primeros registros
-    logger.info("\n📋 PRIMEROS 3 REGISTROS")
+    logger.info("\nPRIMEROS 3 REGISTROS")
     logger.info("-" * 60)
     logger.info(fact.head(3).to_string())
 
     # 7. Verificar tipos de datos
-    logger.info("\n🔬 TIPOS DE DATOS")
+    logger.info("\nTIPOS DE DATOS")
     logger.info("-" * 60)
     for col in fact.columns:
         logger.info(f"  {col:35} -> {fact[col].dtype}")
 
     # 8. Detectar valores None en booleanos (problema común)
-    logger.info("\n⚠️  VALORES NULL EN BOOLEANOS")
+    logger.info("\nVALORES NULL EN BOOLEANOS")
     logger.info("-" * 60)
     for col in ["tiene_novedad", "servicio_completado_exitosamente", "entrega_puntual"]:
         if col in fact.columns:
